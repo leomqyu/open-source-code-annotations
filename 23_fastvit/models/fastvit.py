@@ -517,6 +517,8 @@ class RepCPE(nn.Module):
         self.__delattr__("pe")
 
 
+# MYNOTE: blocks for previous stages
+# token mixer for previous stages, which is a reparam conv that also merges skip connection
 class RepMixerBlock(nn.Module):
     """Implementation of Metaformer block with RepMixer as token mixer.
 
@@ -590,7 +592,8 @@ class RepMixerBlock(nn.Module):
             x = x + self.drop_path(self.convffn(x))
         return x
 
-
+# MYNOTE: blocks for stage 4
+# attention-based token mixer, not very special 
 class AttentionBlock(nn.Module):
     """Implementation of metaformer block with MHSA as token mixer.
 

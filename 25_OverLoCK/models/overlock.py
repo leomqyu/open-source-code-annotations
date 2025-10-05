@@ -62,6 +62,16 @@ def get_bn(dim, use_sync_bn=False):
 
 # used in DilatedReparamBlock.merge_dilated_branches()
 def fuse_bn(conv, bn):
+    """
+    If dwconv then bn, 
+    can merge like this into a single convolution
+    return is the w and b for new conv
+    ----
+    conv must be dw, norm must be batch norm
+    layer_norm cannot be fused into conv because at the same channel, diff H W differnt scaling
+    conv cannot be group wise or point wise because for bn, at different channels the scaling is different
+    """
+    # bn.weight is the gamma ?
     conv_bias = 0 if conv.bias is None else conv.bias
     std = (bn.running_var + bn.eps).sqrt()
     return conv.weight * (bn.weight / std).reshape(-1, 1, 1, 1), bn.bias + (conv_bias - bn.running_mean) * bn.weight / std
@@ -109,7 +119,7 @@ def stem(in_chans=3, embed_dim=96):
     )
 
 
-# shrink size by half with convolution, meanwhile change channel dim 
+# shrink size by half with dense convolution, meanwhile change channel dim 
 def downsample(in_dim, out_dim):
     return nn.Sequential(
         nn.Conv2d(in_dim, out_dim, kernel_size=3, stride=2, padding=1, bias=False),
@@ -165,6 +175,11 @@ class LayerNorm2d(nn.LayerNorm):
         return x.contiguous()
 
 
+# MYNOTE: 
+# for shape [B, C, H, W]
+# normalize for each [b, c, :, :] 
+# for batch norm, it is for each [:, c, :, :]
+# so the current is less sensitive to batch size.
 class GRN(nn.Module):
     """ GRN (Global Response Normalization) layer
     Originally proposed in ConvNeXt V2 (https://arxiv.org/abs/2301.00808)
@@ -194,10 +209,12 @@ class DilatedReparamBlock(nn.Module):
     """
     def __init__(self, channels, kernel_size, deploy, use_sync_bn=False, attempt_use_lk_impl=True):
         super().__init__()
+        # self.lk_origin is the "largest kernel" before merging, and will be the only, merged conv after merging
         self.lk_origin = get_conv2d(channels, channels, kernel_size, stride=1,
                                     padding=kernel_size//2, dilation=1, groups=channels, bias=deploy,
                                     attempt_use_lk_impl=attempt_use_lk_impl)
         self.attempt_use_lk_impl = attempt_use_lk_impl
+        # dilate-1 means the num of empty blocks in kernels between non-empty blocks
 
         #   Default settings. We did not tune them carefully. Different settings may work better.
         if kernel_size == 19:
@@ -247,7 +264,7 @@ class DilatedReparamBlock(nn.Module):
         return out
 
     def merge_dilated_branches(self):
-        if hasattr(self, 'origin_bn'):
+        if hasattr(self, 'origin_bn'):  # if have this attribute, means it is training mode
             origin_k, origin_b = fuse_bn(self.lk_origin, self.origin_bn)
             for k, r in zip(self.kernel_sizes, self.dilates):
                 conv = self.__getattr__('dil_conv_k{}_{}'.format(k, r))
@@ -320,7 +337,7 @@ class RepConvBlock(nn.Module):
         
         self.dwconv = ResDWConv(dim, kernel_size=3)
     
-        self.proj = nn.Sequential(
+        self.proj = nn.Sequential( # dw lkconv, 1x1, dw3x3, 1x1
             norm_layer(dim),
             DilatedReparamBlock(dim, kernel_size=kernel_size, deploy=deploy, use_sync_bn=False, attempt_use_lk_impl=use_gemm),
             nn.BatchNorm2d(dim),
@@ -337,7 +354,7 @@ class RepConvBlock(nn.Module):
         
     def forward_features(self, x):
         
-        x = self.dwconv(x)
+        x = self.dwconv(x)      # MYNOTE: acually no residual ?
         
         if self.res_scale:
             x = self.ls(x) + self.proj(x)
@@ -446,7 +463,7 @@ class DynamicConvBlock(nn.Module):
         self.dwconv2 = ResDWConv(out_dim, kernel_size=3)
         self.norm2 = norm_layer(out_dim)
         
-        self.mlp = nn.Sequential(
+        self.mlp = nn.Sequential(       # MYNOTES: a "standard FFN"
             nn.Conv2d(out_dim, mlp_dim, kernel_size=1),
             nn.GELU(),
             ResDWConv(mlp_dim, kernel_size=3),
@@ -515,7 +532,7 @@ class DynamicConvBlock(nn.Module):
 
 
         # above is the fusion step, below is kernel generation
-        gate = self.gate(x)     # 1x1 Conv and SiLU part
+        gate = self.gate(x)     # 1x1 Conv and SiLU part, done at some place of skip connection
         lepe = self.lepe(x)
 
         is_pad = False
@@ -553,27 +570,28 @@ class DynamicConvBlock(nn.Module):
         x2 = na2d_av(attn2, value[1], kernel_size=self.kernel_size)
 
         x = torch.cat([x1, x2], dim=1)
-        x = rearrange(x, 'b g h w c -> b (g c) h w', h=H, w=W)
+        x = rearrange(x, 'b g h w c -> b (g c) h w', h=H, w=W)  
+        # end of concatenating feat map of diff size conv in ContMix
 
         if is_pad:
             x = F.adaptive_avg_pool2d(x, input_resoltion)
 
         x = self.dyconv_proj(x)
 
-        x = x + lepe
-        x = self.se_layer(x)
+        x = x + lepe    # the "KxK RepConv" residual of ContMix Fig-5a
+        x = self.se_layer(x)    # SE after ContMix
 
-        x = gate * x
-        x = self.proj(x)        # the 1x1 conv right to the double branch of GDSA
+        x = gate * x            # gating
+        x = self.proj(x)        # the 1x1 conv right to the gating of GDSA
 
         if self.res_scale:      # the skip conn after GDSA
             x = self.ls1(identity) + self.drop_path(x)
         else:
             x = identity + self.drop_path(self.ls1(x))
         
-        x = self.dwconv2(x) # norm 3x3 dw conv ("ConvFFN")
+        x = self.dwconv2(x) # another 3x3 conv not shown
          
-        if self.res_scale:  # residual after ConvFFN
+        if self.res_scale:  # norm and ConvFFN
             x = self.ls2(x) + self.drop_path(self.mlp(self.norm2(x)))
         else:
             x = x + self.drop_path(self.ls2(self.mlp(self.norm2(x))))
