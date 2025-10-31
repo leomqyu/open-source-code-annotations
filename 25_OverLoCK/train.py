@@ -1,3 +1,8 @@
+# MYNOTE
+# 1. lr
+#       If --auto-lr is not specified, the value of --lr is used directly as the learning rate.
+#       If --auto-lr is specified, the --lr value is ignored, and the learning rate is computed automatically based on the batch size and world size.
+
 #!/usr/bin/env python3
 """ ImageNet Training Script
 

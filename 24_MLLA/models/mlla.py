@@ -61,7 +61,7 @@ class ConvLayer(nn.Module):
             x = self.act(x)
         return x
 
-
+# input is of shape [b, num_heads, n, head_dim]
 class RoPE(torch.nn.Module):
     r"""Rotary Positional Embedding.
     """
@@ -128,9 +128,9 @@ class LinearAttention(nn.Module):
 
         q = self.elu(q) + 1.0
         k = self.elu(k) + 1.0
-        q_rope = self.rope(q.reshape(b, h, w, c)).reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)
+        q_rope = self.rope(q.reshape(b, h, w, c)).reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)    # input to rope() is of shape [b, num_heads, n, head_dim]
         k_rope = self.rope(k.reshape(b, h, w, c)).reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)
-        q = q.reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)
+        q = q.reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)    # [b, num_head, n, head_dim]
         k = k.reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)
         v = v.reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)
 
@@ -194,7 +194,10 @@ class MLLABlock(nn.Module):
         shortcut = x    # MYNOTE: value of shortcut won't change with x as below operation to x are out-of-place
 
         x = self.norm1(x)
-        act_res = self.act(self.act_proj(x))    # the full shortcut, do a 1x1 conv
+
+        # end of first norm
+
+        act_res = self.act(self.act_proj(x))    # gating
         x = self.in_proj(x).view(B, H, W, C)    # 1x1 conv
         x = self.act(self.dwc(x.permute(0, 3, 1, 2))).permute(0, 2, 3, 1).view(B, L, C) # d3x3 conv
 
@@ -202,6 +205,9 @@ class MLLABlock(nn.Module):
         x = self.attn(x)    # linear attention
 
         x = self.out_proj(x * act_res)          # gating
+
+        # end of "MLLA block" in paper
+
         x = shortcut + self.drop_path(x)        # residual
         x = x + self.cpe2(x.reshape(B, H, W, C).permute(0, 3, 1, 2)).flatten(2).permute(0, 2, 1)    # another pe / d3x3
 

@@ -54,12 +54,14 @@ def _cfg(url="", **kwargs):
 
 
 default_cfgs = {
-    "fastvit_t": _cfg(crop_pct=0.9),
+    "fastvit_t": _cfg(crop_pct=0.9),    # related to data augmentation
     "fastvit_s": _cfg(crop_pct=0.9),
     "fastvit_m": _cfg(crop_pct=0.95),
 }
 
-
+# MYNOTE: stem. 
+# H, W shrink 4 times using 3x3 dense conv
+# channel size changing from c_in to c_out
 def convolutional_stem(
     in_channels: int, out_channels: int, inference_mode: bool = False
 ) -> nn.Sequential:
@@ -109,7 +111,7 @@ def convolutional_stem(
         ),
     )
 
-
+# MYNOTE: input is [B, C, H, W]
 class MHSA(nn.Module):
     """Multi-headed Self Attention module.
 
@@ -171,7 +173,7 @@ class MHSA(nn.Module):
 
         return x
 
-
+# MYNOTE: dw then pw conv
 class PatchEmbed(nn.Module):
     """Convolutional patch embedding layer."""
 
@@ -205,7 +207,7 @@ class PatchEmbed(nn.Module):
                 inference_mode=inference_mode,
             )
         )
-        block.append(
+        block.append(   # point wise
             MobileOneBlock(
                 in_channels=embed_dim,
                 out_channels=embed_dim,
@@ -224,7 +226,7 @@ class PatchEmbed(nn.Module):
         x = self.proj(x)
         return x
 
-
+# MYNOTE: the reparamable conv used in fastvit
 class RepMixer(nn.Module):
     """Reparameterizable token mixer.
 
@@ -345,6 +347,7 @@ class RepMixer(nn.Module):
             self.__delattr__("layer_scale")
 
 
+# MYNOTE: the convolutional based ffn
 class ConvFFN(nn.Module):
     """Convolutional FFN Module."""
 
@@ -402,7 +405,7 @@ class ConvFFN(nn.Module):
         x = self.drop(x)
         return x
 
-
+# MYNOTE: convolution based PE, reparamable
 class RepCPE(nn.Module):
     """Implementation of conditional positional encoding.
 

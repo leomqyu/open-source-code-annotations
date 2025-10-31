@@ -283,7 +283,10 @@ class DilatedReparamBlock(nn.Module):
                 self.__delattr__('dil_conv_k{}_{}'.format(k, r))
                 self.__delattr__('dil_bn_k{}_{}'.format(k, r))
        
-# for both x and ctx: spatial reduction by 2 and adjust channel dim as input
+# for both x and ctx: 
+# return downsampled x with (H//2, W//2), dim -> h_dim
+# return downsampled ctx with (H//2, W//2), h_dim//4 -> h_dim//4
+spatial reduction by 2 and adjust channel dim as input
 class CTXDownsample(nn.Module):
     def __init__(self, dim, h_dim):
         super().__init__()
@@ -836,6 +839,23 @@ class OverLoCK(nn.Module):
     
 
     def forward_sub_features(self, x, ctx):
+        # MYNOTE: [CCLD] 
+        # throughout all sub blocks, the context is composed of 2 parts: p_0 and p_i
+        # throughout all sub stages, the dim of p_0 and p_i is always embed_dim[-1]//4, H&W same w corresponding non-sub blocks
+        # p_0 is the direct output of block 4 (interpolate if needed)
+        # p_i is always the context output of the previous sub-block (except for first one, then p_i is p_0: have 2 p_0 concat together)
+
+        # x is output of block 3, shape (B, embed_dim[-2], H//16, W//16)
+        # ctx is output of block 4, shape (B, embed_dim[-2], H//32, W//32)
+
+        # ctx_cls is output of block 4 (same as ctx), will be returned
+
+        # ctx_up is the context p_0 for sub_block 3
+        #     upsampled from ctx_ori
+        #     shape (B, embed_dim[-1]//4, H//16, W//16)
+        # ctx_ori is the context p_0 for sub_block 4
+        #     derived from ctx (output of block 4) with channel mixing
+        #     shape (B, embed_dim[-1]//4, H//32, W//32)
 
         ctx_cls = ctx       # ctx_cls is the ctx generated in block3
         ctx_ori = self.high_level_proj(ctx) # ctx in block3 with 1/4 c dim -- p_0 for subblock 4
