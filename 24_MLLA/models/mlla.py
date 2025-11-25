@@ -61,7 +61,11 @@ class ConvLayer(nn.Module):
             x = self.act(x)
         return x
 
-# input is of shape [b, num_heads, n, head_dim]
+# input is of shape [b, num_heads, n, head_dim] or [B, H, W, C], is a sequence of eg Q, K ...
+# for image input, the input shap should be [B, H, W, C]
+# output is same shape, the sequence with rope already applied
+# shape param should be [H, W, C]
+# usually don't need to set base
 class RoPE(torch.nn.Module):
     r"""Rotary Positional Embedding.
     """
@@ -78,17 +82,17 @@ class RoPE(torch.nn.Module):
         angles = torch.cat([t.unsqueeze(-1) * theta_ks for t in torch.meshgrid([torch.arange(d) for d in channel_dims], indexing='ij')], dim=-1)
 
         # rotation
-        rotations_re = torch.cos(angles).unsqueeze(dim=-1)
-        rotations_im = torch.sin(angles).unsqueeze(dim=-1)
-        rotations = torch.cat([rotations_re, rotations_im], dim=-1)
+        rotations_re = torch.cos(angles).unsqueeze(dim=-1)  # (*channel_dims, k_max, 1)
+        rotations_im = torch.sin(angles).unsqueeze(dim=-1)  # (*channel_dims, k_max, 1)
+        rotations = torch.cat([rotations_re, rotations_im], dim=-1) # (*channel_dims, k_max, 2)
         self.register_buffer('rotations', rotations)
 
     def forward(self, x):
         if x.dtype != torch.float32:
             x = x.to(torch.float32)
-        x = torch.view_as_complex(x.reshape(*x.shape[:-1], -1, 2))
+        x = torch.view_as_complex(x.reshape(*x.shape[:-1], -1, 2))  # [B, H, W, C] -> [B, H, W, C//2, 2] -> [B, H, W, C//2] where each is complex
         pe_x = torch.view_as_complex(self.rotations) * x
-        return torch.view_as_real(pe_x).flatten(-2)
+        return torch.view_as_real(pe_x).flatten(-2)     # [B, H, W, C]
 
 
 class LinearAttention(nn.Module):
@@ -128,7 +132,7 @@ class LinearAttention(nn.Module):
 
         q = self.elu(q) + 1.0
         k = self.elu(k) + 1.0
-        q_rope = self.rope(q.reshape(b, h, w, c)).reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)    # input to rope() is of shape [b, num_heads, n, head_dim]
+        q_rope = self.rope(q.reshape(b, h, w, c)).reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)
         k_rope = self.rope(k.reshape(b, h, w, c)).reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)
         q = q.reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)    # [b, num_head, n, head_dim]
         k = k.reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)
@@ -199,7 +203,7 @@ class MLLABlock(nn.Module):
 
         act_res = self.act(self.act_proj(x))    # gating
         x = self.in_proj(x).view(B, H, W, C)    # 1x1 conv
-        x = self.act(self.dwc(x.permute(0, 3, 1, 2))).permute(0, 2, 3, 1).view(B, L, C) # d3x3 conv
+        x = self.act(self.dwc(x.permute(0, 3, 1, 2))).permute(0, 2, 3, 1).view(B, L, C) # d3x3 conv, activation
 
         # Linear Attention
         x = self.attn(x)    # linear attention
