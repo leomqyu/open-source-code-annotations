@@ -17,3 +17,9 @@ train.py \
 --clip-grad 5 \
 --mixup 0.1 \
 --color-jitter 0
+
+
+# for smaller model:
+# larger lr
+# no drop path
+# mixup 0.1; color-jitter 0

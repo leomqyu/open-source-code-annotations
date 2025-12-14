@@ -286,7 +286,7 @@ class DilatedReparamBlock(nn.Module):
 # for both x and ctx: 
 # return downsampled x with (H//2, W//2), dim -> h_dim
 # return downsampled ctx with (H//2, W//2), h_dim//4 -> h_dim//4
-spatial reduction by 2 and adjust channel dim as input
+# spatial reduction by 2 and adjust channel dim as input
 class CTXDownsample(nn.Module):
     def __init__(self, dim, h_dim):
         super().__init__()

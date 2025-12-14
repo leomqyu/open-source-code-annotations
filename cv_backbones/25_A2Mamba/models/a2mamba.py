@@ -174,8 +174,8 @@ class RoPE(nn.Module):
         default: clh==clw, clh != clw is not implemented
         '''
         super().__init__()
-        angle = 1.0 / (10000 ** torch.linspace(0, 1, embed_dim // num_heads // 4))
-        angle = angle.unsqueeze(-1).repeat(1, 2).flatten()
+        angle = 1.0 / (10000 ** torch.linspace(0, 1, embed_dim // num_heads // 4))  # [head_dim//4]
+        angle = angle.unsqueeze(-1).repeat(1, 2).flatten()  # [head_dim//4 * 2]
         self.register_buffer('angle', angle)
 
     
@@ -704,7 +704,7 @@ class BasicLayer(nn.Module):
             self.blocks.append(block)
 
     def forward(self, x):
-        pos_enc = self.rope((x.shape[2:]))
+        pos_enc = self.rope((x.shape[2:]))  # (h, w, d1)
         for i, blk in enumerate(self.blocks):
             if i < self.use_checkpoint and x.requires_grad:
                 x = checkpoint.checkpoint(blk, x, pos_enc, use_reentrant=False)
