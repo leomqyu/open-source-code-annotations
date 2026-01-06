@@ -269,9 +269,9 @@ class Qwen3Attention(nn.Module):
         #         f" and `num_heads`: {self.num_heads})."
         #     )
         if self.headwise_attn_output_gate:
-            self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim + self.num_heads, bias=config.qkv_bias)
+            self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim + self.num_heads, bias=config.qkv_bias)    # one head, one scalor value for gating
         elif self.elementwise_attn_output_gate:
-            self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim * 2, bias=config.qkv_bias)
+            self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim * 2, bias=config.qkv_bias)     # MYNOTE projected one for the q, and one for gating
         else:
             self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=config.qkv_bias)
 
