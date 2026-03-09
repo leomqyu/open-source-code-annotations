@@ -727,7 +727,6 @@ def main(args):
                                         recovery_dir=output_dir, decreasing=decreasing, 
                                         max_history=args.checkpoint_hist)
 
-
         with open(os.path.join(output_dir, 'args.yaml'), 'w') as f:
             f.write(args_text)
         with open(os.path.join(output_dir, 'model.log'), 'w') as f:

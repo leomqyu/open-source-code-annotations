@@ -83,7 +83,7 @@ class Attention4D(torch.nn.Module):
         super().__init__()
         self.num_heads = num_heads
         self.scale = key_dim ** -0.5    # the scaling applied to QK^T
-        self.key_dim = key_dim
+        self.key_dim = key_dim          # dim for each HEAD for key/query
         self.nh_kd = nh_kd = key_dim * num_heads    # Total key/query dimension
 
         if stride is not None:
@@ -99,8 +99,8 @@ class Attention4D(torch.nn.Module):
         self.N = self.resolution ** 2
         # N, which is seq len for attention
         self.N2 = self.N
-        self.d = int(attn_ratio * key_dim)
-        self.dh = int(attn_ratio * key_dim) * num_heads
+        self.d = int(attn_ratio * key_dim)      # dim of each HEAD for value
+        self.dh = int(attn_ratio * key_dim) * num_heads # total value dimension
         self.attn_ratio = attn_ratio
         h = self.dh + nh_kd * 2
         self.q = nn.Sequential(nn.Conv2d(dim, self.num_heads * self.key_dim, 1),
@@ -159,7 +159,7 @@ class Attention4D(torch.nn.Module):
         # (B, self.num_heads*self.d, H, W)
         v = self.v(x)
         # (B, self.num_heads*self.d, H, W)
-        v_local = self.v_local(v)   # MYNOTE: a conv, added to V before multiplying with QK^T
+        v_local = self.v_local(v)   # MYNOTE: a conv, added to V before multiplying with QK^T (could be ng better?)
         # (B, self.num_heads, N, self.d)
         v = v.flatten(2).reshape(B, self.num_heads, -1, self.N).permute(0, 1, 3, 2)
 

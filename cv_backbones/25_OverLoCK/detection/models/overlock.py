@@ -767,7 +767,7 @@ class OverLoCK(nn.Module):
             self.extra_norm.append(norm_layer(dim))
         self.extra_norm.append(norm_layer(embed_dim[-1]))
         
-        del self.aux_head
+        del self.aux_head   # MYNOTE: delete head for detection
         del self.head
         
         self.apply(self._init_weights)
@@ -801,6 +801,7 @@ class OverLoCK(nn.Module):
 
         outs.append(self.extra_norm[1](x))
         
+        # MYNOTE: the output of layer 1 and 2 (with extra norm)
         return outs
     
     
@@ -830,6 +831,7 @@ class OverLoCK(nn.Module):
                 ctx = ctx_up
             x, ctx = blk(x, ctx, ctx_up)
         
+        # MYNOTE: output of 3rd layer in f-net concat with context
         outs.append(self.extra_norm[2](torch.cat([x, ctx], dim=1)))
         
         x, ctx = self.patch_embedx(x, ctx)
@@ -854,7 +856,7 @@ class OverLoCK(nn.Module):
     def forward(self, x):
         
         x = self.forward_features(x)
-        
+        # MYNOTE: return a tuple of 4 tensors (x0, x1, x2, x3)
         return x
 
 

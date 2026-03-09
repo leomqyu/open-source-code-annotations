@@ -132,6 +132,8 @@ class LinearAttention(nn.Module):
 
         q = self.elu(q) + 1.0
         k = self.elu(k) + 1.0
+
+        # MYNOTE: rope is only done to the Q and K at the numerator
         q_rope = self.rope(q.reshape(b, h, w, c)).reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)
         k_rope = self.rope(k.reshape(b, h, w, c)).reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)
         q = q.reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)    # [b, num_head, n, head_dim]
